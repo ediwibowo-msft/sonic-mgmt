@@ -288,6 +288,20 @@ class TestbedHealthChecker:
                 # Create fanouthost instance.
                 fanouthost = init_host(inventories=self.inventory, host_pattern=fanout_hostname)
 
+                if fanouthost is None:
+                    if self.is_snappi_testbed:
+                        logger.info(
+                            "Skip fanout host {} health check because it is not present in inventories {}.".format(
+                                fanout_hostname, self.inventory
+                            )
+                        )
+                        continue
+                    raise HostInitFailed(
+                        "Failed to initialize fanout host {} from inventories {}.".format(
+                            fanout_hostname, self.inventory
+                        )
+                    )
+
                 # If sonic fannout, update ssh vars
                 is_sonic = self.localhost.get_host_vars(fanout_hostname).get("os", "eos") == "sonic"
 
