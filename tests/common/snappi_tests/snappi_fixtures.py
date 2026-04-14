@@ -345,15 +345,11 @@ def __portchannel_intf_config(config, port_config_list, duthost, snappi_ports):
         v4_entry = next((e for e in entries if __valid_ipv4_addr(e['addr'])), None)
         v6_entry = next((e for e in entries if not __valid_ipv4_addr(e['addr'])), None)
 
-        # Added fix to select member_port_id based on peer_port and peer_dut
         member_port_ids = [
-            int(sp['port_id'])
-            for sp in (snappi_ports)
+            i for i, sp in enumerate(snappi_ports)
             for m in members
-            if ((sp['peer_port'] == m) and (sp['peer_device'] == duthost.hostname))]
-
-        member_port_ids = [int(sp['port_id']) for sp in (snappi_ports) for m in members if
-                           ((sp['peer_port'] == m) and (sp['peer_device'] == duthost.hostname))]
+            if sp['peer_port'] == m and sp.get('peer_device') == duthost.hostname
+        ]
 
         if not member_port_ids:
             continue
@@ -364,15 +360,25 @@ def __portchannel_intf_config(config, port_config_list, duthost, snappi_ports):
         lag.protocol.lacp.actor_key = 1
 
         for phy in members:
-            # Added fix to select snappi_ports based on peer-device and peer-hostname.
             port_ids = [
-                int(sp['port_id'])
-                for sp in (snappi_ports)
-                if ((sp['peer_port'] == phy) and (sp['peer_device'] == duthost.hostname))]
+                i for i, sp in enumerate(snappi_ports)
+                if sp['peer_port'] == phy and sp.get('peer_device') == duthost.hostname
+            ]
 
             if len(port_ids) != 1:
                 continue
             port_id = port_ids[0]
+            if port_id >= len(config.ports):
+                pytest.fail(
+                    "PortChannel member mapping error on {}: member {} mapped to port_id {} "
+                    "but config.ports has {} entries".format(
+                        duthost.hostname,
+                        phy,
+                        port_id,
+                        len(config.ports),
+                    ),
+                    pytrace=False,
+                )
             mac = __gen_mac(port_id)
             lp = lag.ports.port(port_name=config.ports[port_id].name)[-1]
             lp.lacp.actor_port_number = 1
@@ -2160,7 +2166,13 @@ def tgen_port_info(request: pytest.FixtureRequest, snappi_port_selection, get_sn
         if not snappi_ports:
             pytest.skip(f"Unsupported combination for {flatten_skeleton_parameter}")
 
-        return snappi_dut_base_config(duthosts, snappi_ports, snappi_api, setup=True)
+        testbed_config, port_config_list, snappi_ports = snappi_dut_base_config(
+            duthosts, snappi_ports, snappi_api, setup=True)
+        try:
+            yield (testbed_config, port_config_list, snappi_ports)
+        finally:
+            logger.info('Snappi cleanup after test')
+            setup_dut_ports(False, duthosts, testbed_config, port_config_list, snappi_ports)
 
 
 def flatten_list(lst):
