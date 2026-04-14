@@ -20,12 +20,27 @@ def fanout_graph_facts(localhost, duthosts, rand_one_tgen_dut_hostname, conn_gra
         return facts
 
     selected_dut_hostnames = [dh.hostname for dh in duthosts]
-    for _, val in list(dev_conn[duthost.hostname].items()):
+    for dut_port, val in list(dev_conn[duthost.hostname].items()):
         fanout = val["peerdevice"]
         if fanout not in facts:
             # Query graph using selected DUT + fanout so linked ports are scoped to selected DUTs.
             scoped_graph_facts = get_graph_facts(duthost, localhost, selected_dut_hostnames + [fanout])
             facts[fanout] = {k: v[fanout] for k, v in list(scoped_graph_facts.items()) if fanout in v}
+
+        # When multiple DUTs share the same fanout port in the CSV, the last
+        # entry overwrites earlier ones in graph_utils links dict. Patch the
+        # fanout's device_conn using the DUT's own (always-correct) connection
+        # data so shared Ixia/SNAPPI ports resolve to the current DUT while
+        # preserving any optional attributes already present on the entry.
+        fanout_port = val["peerport"]
+        fanout_device_conn = facts[fanout].setdefault('device_conn', {})
+        fanout_port_conn = fanout_device_conn.setdefault(fanout_port, {})
+        fanout_port_conn.update({
+            "peerdevice": duthost.hostname,
+            "peerport": dut_port,
+            "speed": val.get("speed", ""),
+            "fec_disable": val.get("fec_disable", False),
+        })
     return facts
 
 
